@@ -1,0 +1,14 @@
+.venv
+.idea
+frontend/node_modules/
+__pycache__/
+.vscode/*
+
+!.vscode/extensions.json
+*.env
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
