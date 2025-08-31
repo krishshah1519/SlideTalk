@@ -3,7 +3,9 @@
 frontend/node_modules/
 __pycache__/
 .vscode/*
-
+*.log
+*.mp3
+*.mp4
 !.vscode/extensions.json
 *.env
 .DS_Store
