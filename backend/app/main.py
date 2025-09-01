@@ -6,7 +6,7 @@ import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, StreamingResponse
 from app import logger
 from app.ppt_parser import extract_content_from_ppt
 from app.services import generate_presentation_script, generate_audio_from_script, create_video_from_presentation
@@ -54,17 +54,18 @@ async def process_presentation_endpoint(file: UploadFile = File(...)):
 
         audio_files = generate_audio_from_script(scripts, temp_dir)
 
-        
+
         presentation_id = str(uuid.uuid4())
-        
-        
+
+
         presentation_data_store[presentation_id] = {
             "slides": extracted_data,
             "audio_files": audio_files,
             "temp_dir": temp_dir,
+            "video": None
         }
 
-        
+
         return {
             "presentation_id": presentation_id,
             "filename": file.filename,
@@ -74,9 +75,23 @@ async def process_presentation_endpoint(file: UploadFile = File(...)):
         }
     except Exception as e:
         logger.error(f"An error occurred during presentation creation: {e}")
-        # Clean up immediately if something fails during creation
         cleanup_temp_dir(temp_dir)
         raise HTTPException(status_code=500, detail="An internal server error occurred during presentation creation.")
+
+@app.get("/presentation/{presentation_id}/audio/{audio_filename}")
+async def get_presentation_audio(presentation_id: str, audio_filename: str):
+    if presentation_id not in presentation_data_store:
+        raise HTTPException(status_code=404, detail="Presentation not found.")
+
+    data = presentation_data_store[presentation_id]
+    temp_dir = data["temp_dir"]
+    audio_file_path = os.path.join(temp_dir, audio_filename)
+
+    if not os.path.exists(audio_file_path):
+        raise HTTPException(status_code=404, detail="Audio file not found.")
+
+    return FileResponse(audio_file_path, media_type="audio/mpeg")
+
 
 @app.get("/presentation/{presentation_id}/video")
 async def get_presentation_video(presentation_id: str, background_tasks: BackgroundTasks):
@@ -86,12 +101,12 @@ async def get_presentation_video(presentation_id: str, background_tasks: Backgro
     data = presentation_data_store[presentation_id]
     temp_dir = data["temp_dir"]
 
-    
+
     background_tasks.add_task(cleanup_temp_dir, temp_dir)
-    
+
     video_file_path = create_video_from_presentation(data["slides"], data["audio_files"], temp_dir)
-    
-    
+
+
     del presentation_data_store[presentation_id]
 
     return FileResponse(video_file_path, media_type="video/mp4", filename="presentation.mp4")

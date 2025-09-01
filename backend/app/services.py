@@ -4,12 +4,13 @@ import tempfile
 from typing import List, Dict, Any
 import base64
 from gtts import gTTS
-from moviepy import ImageClip, AudioFileClip, concatenate_videoclips
+from moviepy import ImageClip, AudioFileClip, concatenate_videoclips # Use .editor
 import os
 from app import logger
 from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
+from PIL import Image # <--- ADD THIS IMPORT
 
 load_dotenv()
 
@@ -99,30 +100,43 @@ def generate_audio_from_script(scripts: List[Dict[str, Any]], temp_dir: str) -> 
 def create_video_from_presentation(slides_data: List[Dict[str, Any]], audio_files: List[str], temp_dir: str) -> str:
     clips = []
     temp_image_files = []
+    
+    
+    WIDTH, HEIGHT = 1920, 1080
 
     for i, slide in enumerate(slides_data):
+        
+        if i >= len(audio_files):
+            continue
+
+        temp_image_path = os.path.join(temp_dir, f"slide_{i+1}.png")
         image_data = None
         for element in slide['content']:
             if element['type'] == 'image':
                 image_data = element['data']
                 break
 
-        if image_data and i < len(audio_files):
+        if image_data:
             
             image_data = image_data.split(",")[1]
-            temp_image_path = os.path.join(temp_dir, f"slide_{i+1}.png")
             with open(temp_image_path, "wb") as f:
                 f.write(base64.b64decode(image_data))
-            temp_image_files.append(temp_image_path)
-
+        else:
            
-            img_clip = ImageClip(temp_image_path)
-            audio_clip = AudioFileClip(audio_files[i])
+            img = Image.new('RGB', (WIDTH, HEIGHT), color = '#242424')
+            img.save(temp_image_path)
+            
+        temp_image_files.append(temp_image_path)
 
-            img_clip = img_clip.with_duration(audio_clip.duration)
-            video_clip = img_clip.with_audio(audio_clip)
+        
+        img_clip = ImageClip(temp_image_path)
+        audio_clip = AudioFileClip(audio_files[i])
 
-            clips.append(video_clip)
+        img_clip = img_clip. duration(audio_clip.duration)
+        video_clip = img_clip.with_audio(audio_clip)
+
+        clips.append(video_clip)
+
 
     if not clips:
         raise ValueError("No clips were created. Check if images and audio files are being generated correctly.")
@@ -130,17 +144,23 @@ def create_video_from_presentation(slides_data: List[Dict[str, Any]], audio_file
     final_clip = concatenate_videoclips(clips, method="compose")
     video_file = os.path.join(temp_dir, "presentation.mp4")
 
+    
     final_clip.write_videofile(
         video_file,
         fps=24,
         codec="libx264",
-        preset="ultrafast",
+        preset="ultrafast", 
         threads=4
     )
 
+    
     final_clip.close()
     for clip in clips:
+        if clip.audio:
+            clip.audio.close()
         clip.close()
+    
+    
     for img_file in temp_image_files:
         if os.path.exists(img_file):
             os.remove(img_file)
