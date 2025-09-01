@@ -24,8 +24,9 @@ function App() {
             const response = await axios.post("http://localhost:8000/create-presentation/", formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
+            // The response.data is now the JSON object we need
             setPresentation(response.data);
-            setMessage("✅ Presentation generated successfully!");
+            setMessage("✅ Presentation generated successfully! Review below.");
             logger.info("Presentation generated successfully.");
         } catch (error) {
             const errorMsg = error.response?.data?.detail || "An unexpected error occurred.";
@@ -37,9 +38,9 @@ function App() {
     };
 
     const handleExport = async () => {
-        if (!presentation) return;
+        if (!presentation || !presentation.presentation_id) return;
 
-        setMessage("🎥 Exporting video...");
+        setMessage("🎥 Exporting video... this may take some time.");
         try {
             const response = await axios.get(`http://localhost:8000/presentation/${presentation.presentation_id}/video`, {
                 responseType: 'blob',
@@ -51,43 +52,47 @@ function App() {
             document.body.appendChild(link);
             link.click();
             link.remove();
-            setMessage("✅ Video export started successfully.");
+            window.URL.revokeObjectURL(url); // Clean up the object URL
+            setMessage("✅ Video download started successfully.");
         } catch (error) {
             setMessage("❌ Video export failed.");
             logger.error("Export error:", error);
         }
     };
+    
     return (
-    <div className="h-screen w-screen flex flex-col items-center justify-center bg-gray-900 text-white">
-      <header className="text-center mb-12">
-        <h1 className="text-5xl font-extrabold mb-2">SlideTalk AI 🤖</h1>
-        <p className="text-lg text-gray-400">
-          Your AI-Powered Presentation Assistant
-        </p>
-      </header>
+        <div className="h-screen w-screen flex flex-col items-center justify-center bg-gray-900 text-white p-4">
+            <header className="text-center mb-12">
+                <h1 className="text-5xl font-extrabold mb-2">SlideTalk AI 🤖</h1>
+                <p className="text-lg text-gray-400">
+                    Your AI-Powered Presentation Assistant
+                </p>
+            </header>
 
-      <main className="w-full max-w-lg items-center justify-center text-center px-4 md:px-8">
-        <FileUpload onUpload={handleUpload} isLoading={isLoading} />
+            <main className="w-full max-w-lg items-center justify-center text-center px-4 md:px-8">
+                {/* Hide FileUpload when presentation is loaded */}
+                {!presentation && <FileUpload onUpload={handleUpload} isLoading={isLoading} />}
 
-        {message && (
-          <p
-            className={`text-center my-6 p-4 rounded-lg font-semibold ${
-              message.startsWith("❌")
-                ? "bg-red-900/50 text-red-300"
-                : "bg-gray-700/50 text-gray-300"
-            }`}
-          >
-            {message}
-          </p>
-        )}
+                {message && (
+                    <p
+                        className={`text-center my-6 p-4 rounded-lg font-semibold ${
+                            message.startsWith("❌")
+                                ? "bg-red-900/50 text-red-300"
+                                : "bg-gray-700/50 text-gray-300"
+                        }`}
+                    >
+                        {message}
+                    </p>
+                )}
 
-        <PresentationViewer
-          presentation={presentation}
-          onExport={handleExport}
-        />
-      </main>
-    </div>
-  );
+                {/* This will now receive the correct 'presentation' object */}
+                <PresentationViewer
+                    presentation={presentation}
+                    onExport={handleExport}
+                />
+            </main>
+        </div>
+    );
 }
 
 export default App;

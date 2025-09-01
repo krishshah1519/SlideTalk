@@ -1,21 +1,25 @@
 import json
+import re
+import tempfile
 from typing import List, Dict, Any
 import base64
 from gtts import gTTS
-from moviepy import *
+from moviepy import ImageClip, AudioFileClip, concatenate_videoclips
 import os
 from app import logger
 from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
+
 
 def generate_presentation_script(all_slides_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Generates scripts for an entire presentation in a single API call to Gemini.
     """
     logger.info(f"Generating script for {len(all_slides_data)} slides.")
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
 
     simplified_data = []
     for slide in all_slides_data:
@@ -46,34 +50,56 @@ def generate_presentation_script(all_slides_data: List[Dict[str, Any]]) -> List[
 
     try:
         response = llm.invoke(prompt)
-        parsed_response = json.loads(response.content)
-        print(f"Successfully generated script for {len(parsed_response)} slides.")
+        
+        json_match = re.search(r"```json\n(.*)\n```", response.content, re.DOTALL)
+        if not json_match:
+            try:
+                parsed_response = json.loads(response.content)
+            except json.JSONDecodeError:
+                raise json.JSONDecodeError("No valid JSON found in the response", response.content, 0)
+        else:
+            json_string = json_match.group(1)
+            parsed_response = json.loads(json_string)
+
         logger.info(f"Successfully generated script for {len(parsed_response)} slides.")
         return parsed_response
     except json.JSONDecodeError:
-        print(f"ERROR: Failed to decode JSON from LLM response. Raw Response: {response.content}")
+        logger.error(f"Failed to decode JSON from LLM response. Raw Response: {response.content}")
         return None
     except Exception as e:
-        print(f"An unexpected error occurred while calling the LLM: {e}")
+        logger.error(f"An unexpected error occurred while calling the LLM: {e}")
         return None
 
-def generate_audio_from_script(scripts: List[Dict[str, Any]]) -> List[str]:
-    """
-    Generates audio files from the presentation script.
-    """
-    audio_files = []
-    for script in scripts:
-        tts = gTTS(text=script['script'], lang='en')
-        audio_file = f"slide_{script['slide_number']}.mp3"
+def _generate_single_audio(script_item: Dict[str, Any], temp_dir: str) -> str:
+    """Helper function to generate a single audio file."""
+    try:
+        tts = gTTS(text=script_item['script'], lang='en')
+        audio_file = os.path.join(temp_dir, f"slide_{script_item['slide_number']}.mp3")
         tts.save(audio_file)
-        audio_files.append(audio_file)
-    return audio_files
+        return audio_file
+    except Exception as e:
+        logger.error(f"Failed to generate audio for slide {script_item.get('slide_number', 'unknown')}: {e}")
+        return ""
 
-def create_video_from_presentation(slides_data: List[Dict[str, Any]], audio_files: List[str]) -> str:
+
+def generate_audio_from_script(scripts: List[Dict[str, Any]], temp_dir: str) -> List[str]:
     """
-    Creates a video from the presentation slides and audio files.
+    Generates audio files in parallel using a thread pool.
     """
+    with ThreadPoolExecutor() as executor:
+        
+        futures = [executor.submit(_generate_single_audio, script, temp_dir) for script in scripts]
+        
+        audio_files = [future.result() for future in futures]
+    
+    
+    return [f for f in audio_files if f]
+
+
+def create_video_from_presentation(slides_data: List[Dict[str, Any]], audio_files: List[str], temp_dir: str) -> str:
     clips = []
+    temp_image_files = []
+
     for i, slide in enumerate(slides_data):
         image_data = None
         for element in slide['content']:
@@ -81,23 +107,42 @@ def create_video_from_presentation(slides_data: List[Dict[str, Any]], audio_file
                 image_data = element['data']
                 break
 
-        if image_data:
-            # Remove the "data:image/png;base64," part
+        if image_data and i < len(audio_files):
+            
             image_data = image_data.split(",")[1]
-            with open(f"slide_{i+1}.png", "wb") as f:
+            temp_image_path = os.path.join(temp_dir, f"slide_{i+1}.png")
+            with open(temp_image_path, "wb") as f:
                 f.write(base64.b64decode(image_data))
+            temp_image_files.append(temp_image_path)
 
-            img_clip = ImageClip(f"slide_{i+1}.png").duration(10)
+           
+            img_clip = ImageClip(temp_image_path)
             audio_clip = AudioFileClip(audio_files[i])
-            video_clip = img_clip.set_audio(audio_clip)
+
+            img_clip = img_clip.with_duration(audio_clip.duration)
+            video_clip = img_clip.with_audio(audio_clip)
+
             clips.append(video_clip)
 
-    final_clip = concatenate_videoclips(clips, method="compose")
-    video_file = "presentation.mp4"
-    final_clip.write_videofile(video_file, fps=24)
+    if not clips:
+        raise ValueError("No clips were created. Check if images and audio files are being generated correctly.")
 
-    for i in range(len(slides_data)):
-        os.remove(f"slide_{i+1}.png")
-        os.remove(audio_files[i])
+    final_clip = concatenate_videoclips(clips, method="compose")
+    video_file = os.path.join(temp_dir, "presentation.mp4")
+
+    final_clip.write_videofile(
+        video_file,
+        fps=24,
+        codec="libx264",
+        preset="ultrafast",
+        threads=4
+    )
+
+    final_clip.close()
+    for clip in clips:
+        clip.close()
+    for img_file in temp_image_files:
+        if os.path.exists(img_file):
+            os.remove(img_file)
 
     return video_file
