@@ -1,63 +1,65 @@
 import io
+import os
+import tempfile
 import base64
-import magic
 from typing import List, Dict, Any
-import pptx
-from pptx.enum.shapes import MSO_SHAPE_TYPE
-from pptx.shapes.graphfrm import GraphicFrame
-from pptx.shapes.picture import Picture
-
-
-def _table_to_markdown(shape: GraphicFrame) -> str:
-    """Converts a table shape to a Markdown string."""
-
-    table = shape.table
-    markdown_table = ""
-    try:
-        header_cells = [cell.text for cell in table.rows[0].cells]
-        markdown_table += "| " + " | ".join(header_cells) + " |\n"
-        markdown_table += "| " + " | ".join(["---"] * len(header_cells)) + " |\n"
-        for row in list(table.rows)[1:]:
-            data_cells = [cell.text for cell in row.cells]
-            markdown_table += "| " + " | ".join(data_cells) + " |\n"
-    except IndexError:
-        return "Table is empty or improperly formatted."
-    return markdown_table
-
-
-def _image_to_base64(shape: Picture) -> str:
-    """Converts a picture shape to a Base64 data URI."""
-
-    image_blob = shape.image.blob
-    mime_type = magic.from_buffer(image_blob, mime=True)
-    base64_str = base64.b64encode(image_blob).decode('utf-8')
-    return f"data:{mime_type};base64,{base64_str}"
-
+import win32com.client
+import pythoncom
 
 def extract_content_from_ppt(ppt_file: io.BytesIO) -> List[Dict[str, Any]]:
-    """Extracts all content (text, tables, images) from a PPTX file stream."""
-
-    prs = pptx.Presentation(ppt_file)
+    """
+    Converts each slide of a PPTX file into a base64 encoded image using the PowerPoint application itself.
+    This provides the highest fidelity conversion. Requires pywin32.
+    """
+    # Initialize the COM library for the current thread
+    pythoncom.CoInitialize()
+    
     slides_content = []
+    
+    # Use a temporary directory to handle file operations
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_ppt_path = os.path.join(temp_dir, "presentation.pptx")
+        
+        # Write the in-memory file to a temporary file on disk
+        with open(temp_ppt_path, "wb") as f:
+            f.write(ppt_file.getvalue())
 
-    for i, slide in enumerate(prs.slides):
-        slide_elements = []
-        for shape in sorted(slide.shapes, key=lambda s: (s.top, s.left)):
-            if shape.has_text_frame and shape.text.strip():
-                slide_elements.append({"type": "text", "data": shape.text})
-            elif shape.shape_type == MSO_SHAPE_TYPE.TABLE:
-                slide_elements.append({"type": "table", "data": _table_to_markdown(shape)})
-            elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
-                slide_elements.append({"type": "image", "data": _image_to_base64(shape)})
+        # Create a PowerPoint application object
+        powerpoint = win32com.client.Dispatch("PowerPoint.Application")
+        
+        # Open the presentation
+        presentation = powerpoint.Presentations.Open(temp_ppt_path, WithWindow=False)
+        
+        # Get the notes for each slide
+        notes_list = []
+        for i in range(1, len(presentation.Slides) + 1):
+            slide = presentation.Slides(i)
+            notes = ""
+            if slide.HasNotesPage and slide.NotesPage.Shapes.Placeholders(2).TextFrame.HasText:
+                notes = slide.NotesPage.Shapes.Placeholders(2).TextFrame.TextRange.Text
+            notes_list.append(notes)
 
+        # Export each slide as a high-quality PNG
+        for i in range(1, len(presentation.Slides) + 1):
+            image_path = os.path.join(temp_dir, f"slide_{i}.png")
+            presentation.Slides(i).Export(image_path, "PNG")
+            
+            # Read the exported image and encode it in base64
+            with open(image_path, "rb") as image_file:
+                img_str = base64.b64encode(image_file.read()).decode("utf-8")
+            
+            slide_data = {
+                "slide_number": i,
+                "content": [{"type": "image", "data": f"data:image/png;base64,{img_str}"}],
+                "notes": notes_list[i-1]
+            }
+            slides_content.append(slide_data)
+        
+        
+        presentation.Close()
+        powerpoint.Quit()
 
-        notes = ""
-        if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
-            notes = slide.notes_slide.notes_text_frame.text
+    
+    pythoncom.CoUninitialize()
 
-        slides_content.append({
-            "slide_number": i + 1,
-            "content": slide_elements,
-            "notes": notes,
-        })
     return slides_content

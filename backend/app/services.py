@@ -1,63 +1,62 @@
-import json
-import re
-import tempfile
-from typing import List, Dict, Any
 import base64
-from gtts import gTTS
-from moviepy import ImageClip, AudioFileClip, concatenate_videoclips # Use .editor
+import io
+import json
 import os
+import re
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List
+
+from dotenv import load_dotenv
+from gtts import gTTS
+from moviepy import (AudioFileClip, ImageClip,
+                            concatenate_videoclips)
+from PIL import Image
+
 from app import logger
 from langchain_google_genai import ChatGoogleGenerativeAI
-from dotenv import load_dotenv
-from concurrent.futures import ThreadPoolExecutor
-from PIL import Image
 
 load_dotenv()
 
 
 def generate_presentation_script(all_slides_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Generates scripts for an entire presentation in a single API call to Gemini.
+    Generates scripts for an entire presentation by analyzing the slide images and notes.
     """
     logger.info(f"Generating script for {len(all_slides_data)} slides.")
+    # Use a multimodal model capable of understanding both text and images
     llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
 
-    simplified_data = []
-    for slide in all_slides_data:
-        content_description = []
-        for element in slide['content']:
-            if element['type'] == 'text':
-                content_description.append(f"TEXT: {element['data']}")
-            elif element['type'] == 'table':
-                content_description.append(f"TABLE: {element['data']}")
-            elif element['type'] == 'image':
-                content_description.append("IMAGE: An image is present on this slide.")
-
-        simplified_data.append({
-            "slide_number": slide['slide_number'],
-            "content": "\n".join(content_description),
-            "notes": slide['notes']
-        })
-
+    messages = []
     prompt = f"""
-    You are a professional presentation scriptwriter. I will provide content for a presentation with {len(simplified_data)} slides.
-    Your task is to generate an engaging script for EVERY SINGLE SLIDE provided.
-    Treat it as you're going to present it and don't wait for questions.
-    IMPORTANT: Your response MUST be a single, valid JSON array containing exactly {len(simplified_data)} objects.
+    You are a professional presentation scriptwriter. I will provide a series of slides, each with an image and optional presenter notes.
+    Your task is to generate an engaging and descriptive script for EACH slide.
+    - Analyze the image to understand the visual content (charts, diagrams, keywords).
+    - Use the presenter notes for additional context and key points.
+    - Create a script that a presenter would naturally say for that slide.
+
+    IMPORTANT: Your response MUST be a single, valid JSON array, with one object per slide.
     Each object must have two keys: "slide_number" (integer) and "script" (string).
-    Here is the presentation data:
-    {json.dumps(simplified_data, indent=2)}
     """
+    messages.append({"role": "user", "content": prompt})
+
+    for slide in all_slides_data:
+        slide_number = slide['slide_number']
+        notes = slide['notes']
+        image_data = slide['content'][0]['data']
+        base64_image = image_data.split(",")[1]
+
+        message_content = [
+            {"type": "text", "text": f"--- Slide {slide_number} ---\nPresenter Notes: {notes if notes else 'N/A'}"},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_image}"}}
+        ]
+        messages.append({"role": "user", "content": message_content})
 
     try:
-        response = llm.invoke(prompt)
+        response = llm.invoke(messages)
         
         json_match = re.search(r"```json\n(.*)\n```", response.content, re.DOTALL)
         if not json_match:
-            try:
-                parsed_response = json.loads(response.content)
-            except json.JSONDecodeError:
-                raise json.JSONDecodeError("No valid JSON found in the response", response.content, 0)
+            parsed_response = json.loads(response.content)
         else:
             json_string = json_match.group(1)
             parsed_response = json.loads(json_string)
@@ -66,10 +65,10 @@ def generate_presentation_script(all_slides_data: List[Dict[str, Any]]) -> List[
         return parsed_response
     except json.JSONDecodeError:
         logger.error(f"Failed to decode JSON from LLM response. Raw Response: {response.content}")
-        return None
+        return []
     except Exception as e:
         logger.error(f"An unexpected error occurred while calling the LLM: {e}")
-        return None
+        return []
 
 def _generate_single_audio(script_item: Dict[str, Any], temp_dir: str) -> str:
     """Helper function to generate a single audio file."""
@@ -101,42 +100,25 @@ def create_video_from_presentation(slides_data: List[Dict[str, Any]], audio_file
     clips = []
     temp_image_files = []
     
-    
-    WIDTH, HEIGHT = 1920, 1080
-
     for i, slide in enumerate(slides_data):
-        
-        if i >= len(audio_files):
+        if i >= len(audio_files) or not slide['content']:
             continue
 
         temp_image_path = os.path.join(temp_dir, f"slide_{i+1}.png")
-        image_data = None
-        for element in slide['content']:
-            if element['type'] == 'image':
-                image_data = element['data']
-                break
-
-        if image_data:
-            
-            image_data = image_data.split(",")[1]
+        
+        image_element = slide['content'][0]
+        if image_element['type'] == 'image':
+            image_data = image_element['data'].split(",")[1]
             with open(temp_image_path, "wb") as f:
                 f.write(base64.b64decode(image_data))
-        else:
-           
-            img = Image.new('RGB', (WIDTH, HEIGHT), color = '#242424')
-            img.save(temp_image_path)
-            
-        temp_image_files.append(temp_image_path)
+            temp_image_files.append(temp_image_path)
 
-        
-        img_clip = ImageClip(temp_image_path)
-        audio_clip = AudioFileClip(audio_files[i])
+            img_clip = ImageClip(temp_image_path)
+            audio_clip = AudioFileClip(audio_files[i])
 
-        img_clip = img_clip. duration(audio_clip.duration)
-        video_clip = img_clip.with_audio(audio_clip)
-
-        clips.append(video_clip)
-
+            img_clip = img_clip.set_duration(audio_clip.duration)
+            video_clip = img_clip.set_audio(audio_clip)
+            clips.append(video_clip)
 
     if not clips:
         raise ValueError("No clips were created. Check if images and audio files are being generated correctly.")
