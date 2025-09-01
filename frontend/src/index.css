@@ -35,10 +35,6 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
 }
 
 h1 {
@@ -76,4 +72,19 @@ button:focus-visible {
   button {
     background-color: #f9f9f9;
   }
+}
+
+/* Slick Carousel Overrides */
+.slick-prev:before,
+.slick-next:before {
+  font-size: 24px !important;
+  color: white !important;
+}
+
+.slick-dots li button:before {
+  color: white !important;
+}
+
+.slick-dots li.slick-active button:before {
+    color: #646cff !important;
 }

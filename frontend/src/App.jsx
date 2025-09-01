@@ -8,6 +8,7 @@ function App() {
     const [message, setMessage] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [presentation, setPresentation] = useState(null);
+    const [uploadProgress, setUploadProgress] = useState(0);
 
     const handleUpload = async (selectedFile) => {
         if (!selectedFile) return;
@@ -18,11 +19,16 @@ function App() {
         setIsLoading(true);
         setMessage("🔧 Generating your presentation, this may take a moment...");
         setPresentation(null);
+        setUploadProgress(0);
 
         try {
             logger.info(`Uploading file: ${selectedFile.name}`);
             const response = await axios.post("http://localhost:8000/create-presentation/", formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
+                onUploadProgress: (progressEvent) => {
+                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                    setUploadProgress(percentCompleted);
+                }
             });
             // The response.data is now the JSON object we need
             setPresentation(response.data);
@@ -59,9 +65,9 @@ function App() {
             logger.error("Export error:", error);
         }
     };
-    
+
     return (
-        <div className="h-screen w-screen flex flex-col items-center justify-center bg-gray-900 text-white p-4">
+        <div className="min-h-screen w-full flex flex-col items-center justify-center bg-gray-900 text-white p-4">
             <header className="text-center mb-12">
                 <h1 className="text-5xl font-extrabold mb-2">SlideTalk AI 🤖</h1>
                 <p className="text-lg text-gray-400">
@@ -69,9 +75,9 @@ function App() {
                 </p>
             </header>
 
-            <main className="w-full max-w-lg items-center justify-center text-center px-4 md:px-8">
+            <main className="w-full flex flex-col items-center justify-center px-4 md:px-8">
                 {/* Hide FileUpload when presentation is loaded */}
-                {!presentation && <FileUpload onUpload={handleUpload} isLoading={isLoading} />}
+                {!presentation && <FileUpload onUpload={handleUpload} isLoading={isLoading} progress={uploadProgress} />}
 
                 {message && (
                     <p
@@ -86,10 +92,10 @@ function App() {
                 )}
 
                 {/* This will now receive the correct 'presentation' object */}
-                <PresentationViewer
+                {presentation && <PresentationViewer
                     presentation={presentation}
                     onExport={handleExport}
-                />
+                />}
             </main>
         </div>
     );

@@ -3,9 +3,6 @@ import Slider from 'react-slick';
 import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
 
-// You can add these simple overrides to your index.css if needed for the slider arrows/dots
-// .slick-prev:before, .slick-next:before { font-size: 24px; }
-// .slick-dots li button:before { color: white !important; }
 
 const SlideContent = ({ content }) => (
   <div>
@@ -45,7 +42,7 @@ function PresentationViewer({ presentation, onExport }) {
   };
 
   return (
-    <div className="bg-[#2c2c34] p-8 rounded-xl border border-gray-700">
+    <div className="bg-[#2c2c34] max-w-4xl p-8 rounded-xl border border-gray-700">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">2. Review & Export</h2>
         <button onClick={onExport} className="bg-green-600 text-white font-bold py-2 px-5 rounded-lg hover:bg-green-500 transition-colors">
@@ -66,7 +63,7 @@ function PresentationViewer({ presentation, onExport }) {
                 <p className="text-gray-300">{presentation.scripts[index]?.script || "No script available."}</p>
                 <audio
                   id={`audio-${index}`}
-                  src={`http://localhost:8000/${presentation.audio_files[index]}`}
+                  src={`http://localhost:8000/presentation/${presentation.presentation_id}/audio/${presentation.audio_files[index]}`}
                   controls
                   className="w-full mt-4"
                 />

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-function FileUpload({ onUpload, isLoading }) {
+function FileUpload({ onUpload, isLoading, progress }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [fileName, setFileName] = useState('No file chosen');
 
@@ -19,7 +19,7 @@ function FileUpload({ onUpload, isLoading }) {
   };
 
   return (
-    <div className="bg-[#2c2c34] p-8 rounded-xl text-center mb-8 border border-gray-700 max-w-md">
+    <div className="bg-[#2c2c34] p-8 rounded-xl text-center mb-8 border border-gray-700 max-w-md w-full">
       <h2 className="text-2xl font-bold mb-2">1. Upload Your Presentation</h2>
       <p className="text-gray-400">Upload a `.pptx` file to get started.</p>
 
@@ -32,6 +32,12 @@ function FileUpload({ onUpload, isLoading }) {
           {fileName}
         </span>
       </div>
+
+      {isLoading && (
+        <div className="w-full bg-gray-700 rounded-full h-2.5 mb-4">
+          <div className="bg-indigo-600 h-2.5 rounded-full" style={{ width: `${progress}%` }}></div>
+        </div>
+      )}
 
       <button
         onClick={handleUploadClick}
