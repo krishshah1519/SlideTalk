@@ -10,7 +10,7 @@ from app import logger
 from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
-from PIL import Image # <--- ADD THIS IMPORT
+from PIL import Image
 
 load_dotenv()
 
