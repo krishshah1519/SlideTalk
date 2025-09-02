@@ -10,6 +10,7 @@ from starlette.responses import FileResponse, StreamingResponse
 from app import logger
 from app.ppt_parser import extract_content_from_ppt
 from app.services import generate_presentation_script, generate_audio_from_script, create_video_from_presentation
+from fastapi import Request
 
 load_dotenv()
 
@@ -25,6 +26,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.post("/presentation/ask")
+async def ask_question_endpoint(request: Request):
+    data = await request.json()
+    presentation_id = data.get("presentation_id")
+    question = data.get("question", "")
+    context = data.get("context", [])
+    if not presentation_id or context is None:
+        raise HTTPException(status_code=400, detail="Missing presentation_id or context.")
+
+    # Compose a prompt for the LLM
+    prompt = "You are an expert assistant for presentations. Here is the context from the slides and scripts so far."
+    for slide in context:
+        prompt += f"\nSlide {slide.get('slide_number')}: {slide.get('script', '')}"
+    if question:
+        prompt += f"\nQuestion: {question}"
+    else:
+        prompt += "\nNo question was asked."
+
+    # Use Gemini or any LLM (assuming ChatGoogleGenerativeAI is available)
+    try:
+        from app.services import ChatGoogleGenerativeAI
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+        response = llm.invoke([{"role": "user", "content": prompt}])
+        answer = response.content.strip()
+    except Exception as e:
+        logger.error(f"Error in LLM question answering: {e}")
+        answer = "Sorry, I could not process your question."
+
+    # If no question, return a prompt to move to next slide
+    if not question:
+        answer = "Shall we move to next slide?"
+
+    return {"answer": answer}
 
 presentation_data_store = {}
 
@@ -52,11 +87,19 @@ async def process_presentation_endpoint(file: UploadFile = File(...)):
         if not scripts:
             raise HTTPException(status_code=500, detail="Failed to generate scripts.")
 
-        audio_files = generate_audio_from_script(scripts, temp_dir)
+        # Debug: log scripts and slide numbers
+        logger.info(f"Scripts generated: {scripts}")
+        logger.info(f"Slide numbers in scripts: {[s.get('slide_number') for s in scripts]}")
 
+        audio_files = generate_audio_from_script(scripts, temp_dir)
+        # Log audio file creation and existence
+        for f in audio_files:
+            if os.path.exists(f):
+                logger.info(f"Audio file exists: {f}")
+            else:
+                logger.error(f"Audio file missing after generation: {f}")
 
         presentation_id = str(uuid.uuid4())
-
 
         presentation_data_store[presentation_id] = {
             "slides": extracted_data,
@@ -65,13 +108,12 @@ async def process_presentation_endpoint(file: UploadFile = File(...)):
             "video": None
         }
 
-
         return {
             "presentation_id": presentation_id,
             "filename": file.filename,
             "slides": extracted_data,
             "scripts": scripts,
-            "audio_files": [os.path.basename(f) for f in audio_files], # Send relative paths for display
+            "audio_files": [os.path.basename(f) for f in audio_files if os.path.exists(f)], # Only send existing files
         }
     except Exception as e:
         logger.error(f"An error occurred during presentation creation: {e}")
