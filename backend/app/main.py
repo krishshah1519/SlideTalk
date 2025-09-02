@@ -6,11 +6,12 @@ import uuid
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from starlette.responses import FileResponse, StreamingResponse
+from starlette.responses import FileResponse
 from app import logger
 from app.ppt_parser import extract_content_from_ppt
 from app.services import generate_presentation_script, generate_audio_from_script, create_video_from_presentation
-from fastapi import Request
+from pydantic import BaseModel, Field
+from typing import List, Any
 
 load_dotenv()
 
@@ -26,22 +27,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class AskQuestionRequest(BaseModel):
+    presentation_id: str
+    question: str = ""
+    context: List[Any]
 
 @app.post("/presentation/ask")
-async def ask_question_endpoint(request: Request):
-    data = await request.json()
-    presentation_id = data.get("presentation_id")
-    question = data.get("question", "")
-    context = data.get("context", [])
-    if not presentation_id or context is None:
+async def ask_question_endpoint(request: AskQuestionRequest):
+    if not request.presentation_id or not request.context:
         raise HTTPException(status_code=400, detail="Missing presentation_id or context.")
 
-    # Compose a prompt for the LLM
     prompt = "You are an expert assistant for presentations. Here is the context from the slides and scripts so far."
-    for slide in context:
+    for slide in request.context:
         prompt += f"\nSlide {slide.get('slide_number')}: {slide.get('script', '')}"
-    if question:
-        prompt += f"\nQuestion: {question}"
+    if request.question:
+        prompt += f"\nQuestion: {request.question}"
     else:
         prompt += "\nNo question was asked."
 
@@ -55,7 +55,7 @@ async def ask_question_endpoint(request: Request):
         answer = "Sorry, I could not process your question."
 
     
-    if not question:
+    if not request.question:
         answer = "Shall we move to next slide?"
 
     return {"answer": answer}
@@ -93,9 +93,7 @@ async def process_presentation_endpoint(file: UploadFile = File(...)):
         audio_files = generate_audio_from_script(scripts, temp_dir)
         
         for f in audio_files:
-            if os.path.exists(f):
-                logger.info(f"Audio file exists: {f}")
-            else:
+            if not os.path.exists(f):
                 logger.error(f"Audio file missing after generation: {f}")
 
         presentation_id = str(uuid.uuid4())
@@ -103,8 +101,7 @@ async def process_presentation_endpoint(file: UploadFile = File(...)):
         presentation_data_store[presentation_id] = {
             "slides": extracted_data,
             "audio_files": audio_files,
-            "temp_dir": temp_dir,
-            "video": None
+            "temp_dir": temp_dir
         }
 
         return {
@@ -112,7 +109,7 @@ async def process_presentation_endpoint(file: UploadFile = File(...)):
             "filename": file.filename,
             "slides": extracted_data,
             "scripts": scripts,
-            "audio_files": [os.path.basename(f) for f in audio_files if os.path.exists(f)], # Only send existing files
+            "audio_files": [os.path.basename(f) for f in audio_files if os.path.exists(f)],
         }
     except Exception as e:
         logger.error(f"An error occurred during presentation creation: {e}")
@@ -142,12 +139,9 @@ async def get_presentation_video(presentation_id: str, background_tasks: Backgro
     data = presentation_data_store[presentation_id]
     temp_dir = data["temp_dir"]
 
-
-    background_tasks.add_task(cleanup_temp_dir, temp_dir)
-
     video_file_path = create_video_from_presentation(data["slides"], data["audio_files"], temp_dir)
 
-
+    background_tasks.add_task(cleanup_temp_dir, temp_dir)
     del presentation_data_store[presentation_id]
 
     return FileResponse(video_file_path, media_type="video/mp4", filename="presentation.mp4")
