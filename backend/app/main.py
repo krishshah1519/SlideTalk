@@ -45,7 +45,6 @@ async def ask_question_endpoint(request: Request):
     else:
         prompt += "\nNo question was asked."
 
-    # Use Gemini or any LLM (assuming ChatGoogleGenerativeAI is available)
     try:
         from app.services import ChatGoogleGenerativeAI
         llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
@@ -55,7 +54,7 @@ async def ask_question_endpoint(request: Request):
         logger.error(f"Error in LLM question answering: {e}")
         answer = "Sorry, I could not process your question."
 
-    # If no question, return a prompt to move to next slide
+    
     if not question:
         answer = "Shall we move to next slide?"
 
@@ -87,12 +86,12 @@ async def process_presentation_endpoint(file: UploadFile = File(...)):
         if not scripts:
             raise HTTPException(status_code=500, detail="Failed to generate scripts.")
 
-        # Debug: log scripts and slide numbers
+        
         logger.info(f"Scripts generated: {scripts}")
         logger.info(f"Slide numbers in scripts: {[s.get('slide_number') for s in scripts]}")
 
         audio_files = generate_audio_from_script(scripts, temp_dir)
-        # Log audio file creation and existence
+        
         for f in audio_files:
             if os.path.exists(f):
                 logger.info(f"Audio file exists: {f}")
