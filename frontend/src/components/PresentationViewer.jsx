@@ -9,7 +9,7 @@ function PresentationViewer({ presentation, onExport }) {
   const [questions, setQuestions] = useState(Array(presentation?.slides.length || 0).fill(''));
   const [answers, setAnswers] = useState(Array(presentation?.slides.length || 0).fill(''));
   const [loading, setLoading] = useState(false);
-  const [pendingSlide, setPendingSlide] = useState(null);
+  const [isListening, setIsListening] = useState(false);
   const sliderRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -24,7 +24,8 @@ function PresentationViewer({ presentation, onExport }) {
     }));
   };
 
-  const handleAskQuestion = async (slideIdx) => {
+  const handleAskQuestion = async (slideIdx, question) => {
+    setIsListening(false); // Stop listening once a question is sent
     setLoading(true);
     const newAnswers = [...answers];
     try {
@@ -34,12 +35,15 @@ function PresentationViewer({ presentation, onExport }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           presentation_id: presentation.presentation_id,
-          question: questions[slideIdx],
+          question: question,
           context,
         }),
       });
       const data = await response.json();
       newAnswers[slideIdx] = data.answer || 'No answer returned.';
+      if (data.action === 'next_slide') {
+        setTimeout(() => handleMoveNext(slideIdx), 2000); // Wait 2s before moving
+      }
     } catch (err) {
       newAnswers[slideIdx] = 'Error: Could not get answer.';
     }
@@ -47,15 +51,14 @@ function PresentationViewer({ presentation, onExport }) {
     setLoading(false);
   };
 
-  const handleNoQuestion = (slideIdx) => {
-    setPendingSlide(slideIdx);
-  };
-
   const handleMoveNext = (slideIdx) => {
-    setPendingSlide(null);
     if (sliderRef.current && slideIdx < presentation.slides.length - 1) {
       sliderRef.current.slickNext();
     }
+  };
+
+  const handleNoQuestion = (slideIdx) => {
+    handleAskQuestion(slideIdx, "");
   };
 
   const settings = {
@@ -65,6 +68,9 @@ function PresentationViewer({ presentation, onExport }) {
     slidesToShow: 1,
     slidesToScroll: 1,
     adaptiveHeight: true,
+    beforeChange: () => {
+        setIsListening(false);
+    },
     afterChange: (current) => {
       setCurrentSlide(current);
       document.querySelectorAll('audio').forEach((audio) => audio.pause());
@@ -89,27 +95,14 @@ function PresentationViewer({ presentation, onExport }) {
 
   const handlePause = () => {
     setIsPlaying(false);
-    const audio = document.getElementById(`audio-${currentSlide}`);
-    if (audio) {
-      audio.pause();
-    }
+    setIsListening(false);
+    document.querySelectorAll('audio').forEach((audio) => audio.pause());
   };
 
   const handleEnded = (index) => {
     const isLastSlide = index === presentation.slides.length - 1;
     if (isPlaying && !isLastSlide) {
-      if (sliderRef.current) {
-        sliderRef.current.slickNext();
-        setTimeout(() => {
-          if (isPlaying) {
-            const nextAudio = document.getElementById(`audio-${index + 1}`);
-            if (nextAudio) {
-              nextAudio.currentTime = 0;
-              nextAudio.play();
-            }
-          }
-        }, 500);
-      }
+      setIsListening(true);
     } else {
       setIsPlaying(false);
     }
@@ -131,8 +124,8 @@ function PresentationViewer({ presentation, onExport }) {
           {/* <button
             onClick={onExport}
             className="bg-green-600 text-white font-bold py-2 px-5 rounded-lg hover:bg-green-500 transition-colors"
-          > */}
-            {/* Export as Video
+          >
+            Export as Video
           </button> */}
         </div>
       </div>
@@ -157,11 +150,10 @@ function PresentationViewer({ presentation, onExport }) {
                 newQuestions[index] = e.target.value;
                 setQuestions(newQuestions);
               }}
-              onAskQuestion={() => handleAskQuestion(index)}
+              onAskQuestion={() => handleAskQuestion(index, questions[index])}
               onNoQuestion={() => handleNoQuestion(index)}
-              onMoveNext={() => handleMoveNext(index)}
               loading={loading}
-              pendingSlide={pendingSlide}
+              isListening={isListening && currentSlide === index}
             />
           </div>
         ))}
