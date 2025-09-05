@@ -15,9 +15,9 @@ function QnA({
   const recognitionRef = useRef(null);
   const silenceTimerRef = useRef(null);
   const transcriptReceived = useRef(false);
-  const inputRef = useRef(null); // Ref for the input box
+  const inputRef = useRef(null); 
 
-  // Effect to focus the input when listening starts
+
   useEffect(() => {
     if (isListening) {
       inputRef.current?.focus();
@@ -47,7 +47,7 @@ function QnA({
             if (recognitionRef.current) {
                 recognitionRef.current.stop();
             }
-        }, 5000); // 5 seconds of silence
+        }, 5000); 
     };
 
     recognition.onresult = (event) => {

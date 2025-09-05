@@ -34,8 +34,11 @@ class AskQuestionRequest(BaseModel):
 
 @app.post("/presentation/ask")
 async def ask_question_endpoint(request: AskQuestionRequest):
-    if not request.presentation_id or not request.context:
-        raise HTTPException(status_code=400, detail="Missing presentation_id or context.")
+    if not request.presentation_id:
+        raise HTTPException(status_code=400, detail="Missing presentation_id.")
+    
+    if  not request.context:
+        raise HTTPException(status_code=400, detail="Missing context.")
 
     if not request.question:
         return {"answer": "No question detected, moving to the next slide.", "action": "next_slide"}
