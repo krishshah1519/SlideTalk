@@ -118,7 +118,7 @@ function PresentationViewer({ presentation, onExport }) {
   return (
     <div className="bg-[#2c2c34] max-w-6xl w-full p-8 rounded-xl border border-gray-700">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">2. Review & Export</h2>
+        <h2 className="text-2xl font-bold">2. Review </h2>
         <div>
           <button
             onClick={isPlaying ? handlePause : handlePlay}
@@ -128,12 +128,12 @@ function PresentationViewer({ presentation, onExport }) {
           >
             {isPlaying ? 'Pause' : 'Play'}
           </button>
-          <button
+          {/* <button
             onClick={onExport}
             className="bg-green-600 text-white font-bold py-2 px-5 rounded-lg hover:bg-green-500 transition-colors"
-          >
-            Export as Video
-          </button>
+          > */}
+            {/* Export as Video
+          </button> */}
         </div>
       </div>
 
