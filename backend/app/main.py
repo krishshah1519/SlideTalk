@@ -72,6 +72,7 @@ def cleanup_temp_dir(temp_dir: str):
 
 @app.post("/create-presentation/")
 async def process_presentation_endpoint(file: UploadFile = File(...)):
+
     if not file.filename.endswith('.pptx'):
         raise HTTPException(status_code=400, detail="Invalid file type. Please upload a .pptx file.")
 
@@ -123,6 +124,17 @@ async def get_presentation_audio(presentation_id: str, audio_filename: str):
     return FileResponse(audio_file_path, media_type="audio/mpeg")
 
 
+def cleanup_temp_dir(temp_dir: str, presentation_id: str):
+    """A helper function to remove the temporary directory and presentation data."""
+    try:
+        shutil.rmtree(temp_dir)
+        logger.info(f"Successfully cleaned up temporary directory: {temp_dir}")
+        if presentation_id in presentation_data_store:
+            del presentation_data_store[presentation_id]
+            logger.info(f"Successfully cleaned up presentation data for ID: {presentation_id}")
+    except Exception as e:
+        logger.error(f"Error cleaning up temporary directory {temp_dir}: {e}")
+
 @app.get("/presentation/{presentation_id}/video")
 async def get_presentation_video(presentation_id: str, background_tasks: BackgroundTasks):
     if presentation_id not in presentation_data_store:
@@ -133,8 +145,6 @@ async def get_presentation_video(presentation_id: str, background_tasks: Backgro
 
     video_file_path = create_video_from_presentation(data["slides"], data["audio_files"], temp_dir)
 
-    background_tasks.add_task(cleanup_temp_dir, temp_dir)
-    if presentation_id in presentation_data_store:
-        del presentation_data_store[presentation_id]
+    background_tasks.add_task(cleanup_temp_dir, temp_dir, presentation_id) # Pass presentation_id to cleanup
 
     return FileResponse(video_file_path, media_type="video/mp4", filename="presentation.mp4")
