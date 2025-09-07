@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from starlette.responses import FileResponse
 from app import logger
 from app.ppt_parser import extract_content_from_ppt
-from app.services import generate_presentation_script, generate_audio_from_script, create_video_from_presentation
+from app.services import generate_presentation_script, generate_audio_from_script
 from pydantic import BaseModel, Field
 from typing import List, Any
 
@@ -50,8 +50,7 @@ async def ask_question_endpoint(request: AskQuestionRequest):
     prompt += f"\nQuestion: {request.question}"
 
     try:
-        from app.services import ChatGoogleGenerativeAI
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+        from app.llm import llm
         response = llm.invoke([{"role": "user", "content": prompt}])
         answer = response.content.strip()
     except Exception as e:
@@ -62,17 +61,20 @@ async def ask_question_endpoint(request: AskQuestionRequest):
 
 presentation_data_store = {}
 
-def cleanup_temp_dir(temp_dir: str):
-    """A helper function to remove the temporary directory."""
+def cleanup_presentation_data(temp_dir: str, presentation_id: str = None):
+    """A helper function to remove the temporary directory and optionally presentation data."""
     try:
-        shutil.rmtree(temp_dir)
-        logger.info(f"Successfully cleaned up temporary directory: {temp_dir}")
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+            logger.info(f"Successfully cleaned up temporary directory: {temp_dir}")
+        if presentation_id and presentation_id in presentation_data_store:
+            del presentation_data_store[presentation_id]
+            logger.info(f"Successfully cleaned up presentation data for ID: {presentation_id}")
     except Exception as e:
-        logger.error(f"Error cleaning up temporary directory {temp_dir}: {e}")
+        logger.error(f"Error during cleanup for temp_dir {temp_dir}: {e}")
 
 @app.post("/create-presentation/")
 async def process_presentation_endpoint(file: UploadFile = File(...)):
-
     if not file.filename.endswith('.pptx'):
         raise HTTPException(status_code=400, detail="Invalid file type. Please upload a .pptx file.")
 
@@ -106,7 +108,8 @@ async def process_presentation_endpoint(file: UploadFile = File(...)):
         }
     except Exception as e:
         logger.error(f"An error occurred during presentation creation: {e}", exc_info=True)
-        cleanup_temp_dir(temp_dir)
+        # This call now works correctly because presentation_id is not required
+        cleanup_presentation_data(temp_dir)
         raise HTTPException(status_code=500, detail="An internal server error occurred during presentation creation.")
 
 @app.get("/presentation/{presentation_id}/audio/{audio_filename}")
@@ -135,16 +138,3 @@ def cleanup_temp_dir(temp_dir: str, presentation_id: str):
     except Exception as e:
         logger.error(f"Error cleaning up temporary directory {temp_dir}: {e}")
 
-@app.get("/presentation/{presentation_id}/video")
-async def get_presentation_video(presentation_id: str, background_tasks: BackgroundTasks):
-    if presentation_id not in presentation_data_store:
-        raise HTTPException(status_code=404, detail="Presentation not found.")
-
-    data = presentation_data_store[presentation_id]
-    temp_dir = data["temp_dir"]
-
-    video_file_path = create_video_from_presentation(data["slides"], data["audio_files"], temp_dir)
-
-    background_tasks.add_task(cleanup_temp_dir, temp_dir, presentation_id) # Pass presentation_id to cleanup
-
-    return FileResponse(video_file_path, media_type="video/mp4", filename="presentation.mp4")
