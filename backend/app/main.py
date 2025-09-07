@@ -108,7 +108,6 @@ async def process_presentation_endpoint(file: UploadFile = File(...)):
         }
     except Exception as e:
         logger.error(f"An error occurred during presentation creation: {e}", exc_info=True)
-        # This call now works correctly because presentation_id is not required
         cleanup_presentation_data(temp_dir)
         raise HTTPException(status_code=500, detail="An internal server error occurred during presentation creation.")
 
@@ -125,16 +124,4 @@ async def get_presentation_audio(presentation_id: str, audio_filename: str):
         raise HTTPException(status_code=404, detail="Audio file not found.")
 
     return FileResponse(audio_file_path, media_type="audio/mpeg")
-
-
-def cleanup_temp_dir(temp_dir: str, presentation_id: str):
-    """A helper function to remove the temporary directory and presentation data."""
-    try:
-        shutil.rmtree(temp_dir)
-        logger.info(f"Successfully cleaned up temporary directory: {temp_dir}")
-        if presentation_id in presentation_data_store:
-            del presentation_data_store[presentation_id]
-            logger.info(f"Successfully cleaned up presentation data for ID: {presentation_id}")
-    except Exception as e:
-        logger.error(f"Error cleaning up temporary directory {temp_dir}: {e}")
 

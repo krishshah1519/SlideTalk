@@ -39,27 +39,6 @@ function App() {
         }
     };
 
-    const handleExport = async () => {
-        if (!presentation || !presentation.presentation_id) return;
-        setMessage("🎥 Exporting video... this may take some time.");
-        try {
-            const response = await axios.get(`http://localhost:8000/presentation/${presentation.presentation_id}/video`, {
-                responseType: 'blob',
-            });
-            const url = window.URL.createObjectURL(new Blob([response.data]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', 'presentation.mp4');
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(url); // Clean up the object URL
-            setMessage("✅ Video download started successfully.");
-        } catch (error) {
-            setMessage("❌ Video export failed.");
-            logger.error("Export error:", error);
-        }
-    };
 
     return (
         <div className="min-h-screen w-full flex flex-col bg-gh-dark-bg text-gh-dark-text">
@@ -93,7 +72,6 @@ function App() {
                     )}
                     {presentation && <PresentationViewer
                         presentation={presentation}
-                        onExport={handleExport}
                     />}
                 </div>
             </main>
