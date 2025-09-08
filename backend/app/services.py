@@ -70,7 +70,6 @@ def generate_presentation_script(all_slides_data: List[Dict[str, Any]]) -> List[
             scripts.append(response)
 
             logger.info(f"Successfully generated script for slide {slide_number}")
-            # time.sleep(2)  
 
         except Exception as e:
             logger.error(f"Failed to generate script for slide {slide.get('slide_number', 'unknown')}: {e}", exc_info=True)

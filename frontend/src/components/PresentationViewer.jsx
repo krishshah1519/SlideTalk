@@ -25,7 +25,8 @@ function PresentationViewer({ presentation, onExport }) {
   };
 
   const handleAskQuestion = async (slideIdx, question) => {
-    setIsListening(false); // Stop listening once a question is sent
+    setIsListening(false); 
+    setIsPlaying(false);
     setLoading(true);
     const newAnswers = [...answers];
     try {

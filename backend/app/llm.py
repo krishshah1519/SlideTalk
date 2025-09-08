@@ -7,4 +7,4 @@ def get_llm():
     """Initializes and returns the ChatGoogleGenerativeAI model."""
     return ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
 
-llm = get_llm()
+llm = get_llm() 
