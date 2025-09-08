@@ -87,7 +87,8 @@ function PresentationViewer({ presentation, onExport }) {
 
   const handlePlay = () => {
     setIsPlaying(true);
-    const audio = document.getElementById(`audio-${currentSlide}`);
+    const currentSlideIndex = sliderRef.current?.innerSlider.state.currentSlide ?? currentSlide;
+    const audio = document.getElementById(`audio-${currentSlideIndex}`);
     if (audio) {
       audio.currentTime = 0;
       audio.play();
